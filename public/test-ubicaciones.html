@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Prueba Ubicaciones</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 0; }
+        .wrap { display: grid; grid-template-columns: 360px 1fr; gap: 12px; height: 100vh; }
+        .panel { padding: 12px; overflow: auto; border-right: 1px solid #eee; }
+        #map { width: 100%; height: 100vh; }
+        input, button, textarea { width: 100%; padding: 8px; margin: 6px 0; box-sizing: border-box; }
+        .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        small { color: #666; }
+        .pill { display:inline-block; background:#eef; padding:2px 6px; border-radius:10px; font-size:12px; }
+        .muted { color:#666; }
+        .hr { border-top: 1px dashed #ddd; margin: 12px 0; }
+        .actions { display:flex; gap:8px; }
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <div class="panel">
+        <h3>Login</h3>
+        <label>Correo</label>
+        <input id="email" type="email" placeholder="usuario@example.com" />
+        <label>Contraseña</label>
+        <input id="password" type="password" placeholder="********" />
+        <button id="btnLogin">Iniciar sesión</button>
+        <div id="authStatus" class="muted"></div>
+
+        <div class="hr"></div>
+
+        <h3>Nueva dirección</h3>
+        <div class="row">
+            <div>
+                <label>Nombre Origen</label>
+                <input id="nombreOrigen" placeholder="Almacén Central" />
+            </div>
+            <div>
+                <label>Nombre Destino</label>
+                <input id="nombreDestino" placeholder="Sucursal Sur" />
+            </div>
+        </div>
+        <div class="row">
+            <div>
+                <label>Origen Lng,Lat</label>
+                <input id="origenCoord" placeholder="-68.12345,-16.4897" readonly />
+            </div>
+            <div>
+                <label>Destino Lng,Lat</label>
+                <input id="destinoCoord" placeholder="-68.14567,-16.5123" readonly />
+            </div>
+        </div>
+        <div class="actions">
+            <button id="btnSetOrigen">Seleccionar Origen</button>
+            <button id="btnSetDestino">Seleccionar Destino</button>
+        </div>
+        <small>Click en el mapa para fijar el punto activo (origen/destino).</small>
+
+        <div class="hr"></div>
+
+        <h4>Ruta</h4>
+        <div class="actions">
+            <button id="btnRuta">Trazar ruta</button>
+            <button id="btnGuardar" disabled>Guardar dirección</button>
+        </div>
+        <small id="rutaInfo" class="muted"></small>
+
+        <div class="hr"></div>
+
+        <h3>Mis direcciones</h3>
+        <button id="btnListar">Listar</button>
+        <div id="lista"></div>
+    </div>
+
+    <div id="map"></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// Config
+const apiBase = location.origin + '/api';
+const orsApiKey = '5b3ce3597851110001cf6248dbff311ed4d34185911c2eb9e6c50080';
+
+// Estado
+let token = null;
+let modo = null; // 'origen' | 'destino'
+let origen = null; // [lng, lat]
+let destino = null; // [lng, lat]
+let rutaGeoJSON = null; // GeoJSON LineString
+let markers = { origen: null, destino: null };
+let rutaLayer = null;
+
+// Mapa
+const map = L.map('map').setView([-16.5, -68.15], 12);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; OpenStreetMap'
+}).addTo(map);
+
+map.on('click', (e) => {
+    if (!modo) return;
+    const lng = e.latlng.lng.toFixed(6);
+    const lat = e.latlng.lat.toFixed(6);
+    if (modo === 'origen') {
+        origen = [parseFloat(lng), parseFloat(lat)];
+        document.getElementById('origenCoord').value = `${lng},${lat}`;
+        if (markers.origen) map.removeLayer(markers.origen);
+        markers.origen = L.marker([lat, lng]).addTo(map).bindPopup('Origen').openPopup();
+    } else if (modo === 'destino') {
+        destino = [parseFloat(lng), parseFloat(lat)];
+        document.getElementById('destinoCoord').value = `${lng},${lat}`;
+        if (markers.destino) map.removeLayer(markers.destino);
+        markers.destino = L.marker([lat, lng]).addTo(map).bindPopup('Destino').openPopup();
+    }
+});
+
+// UI handlers
+document.getElementById('btnSetOrigen').onclick = () => { modo = 'origen'; };
+document.getElementById('btnSetDestino').onclick = () => { modo = 'destino'; };
+
+document.getElementById('btnLogin').onclick = async () => {
+    const correo = document.getElementById('email').value.trim();
+    const contrasena = document.getElementById('password').value.trim();
+    const res = await fetch(`${apiBase}/auth/login`, {
+        method: 'POST', headers: { 'Content-Type':'application/json', 'Accept':'application/json' },
+        body: JSON.stringify({ correo, contrasena })
+    });
+    const data = await res.json();
+    if (res.ok && data.token) {
+        token = data.token;
+        document.getElementById('authStatus').innerHTML = `Autenticado <span class="pill">${data.usuario?.nombre || ''}</span>`;
+    } else {
+        document.getElementById('authStatus').textContent = data.error || 'Error de autenticación';
+    }
+};
+
+document.getElementById('btnRuta').onclick = async () => {
+    if (!origen || !destino) { alert('Selecciona origen y destino'); return; }
+    // OpenRouteService directions: coordinate order is lng,lat
+    try {
+        const url = 'https://api.openrouteservice.org/v2/directions/driving-car/geojson';
+        const body = {
+            coordinates: [ origen, destino ]
+        };
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': orsApiKey
+            },
+            body: JSON.stringify(body)
+        });
+        const geo = await res.json();
+        if (!res.ok) throw new Error(geo.error || 'Error en ORS');
+
+        // GeoJSON FeatureCollection -> tomamos la primera feature LineString
+        const feat = geo.features && geo.features[0];
+        if (!feat) throw new Error('Respuesta ORS inválida');
+        rutaGeoJSON = JSON.stringify(feat.geometry); // guardaremos como string en la API
+
+        // Pintar ruta
+        if (rutaLayer) { map.removeLayer(rutaLayer); }
+        rutaLayer = L.geoJSON(feat).addTo(map);
+        map.fitBounds(rutaLayer.getBounds());
+        document.getElementById('rutaInfo').textContent = 'Ruta calculada y mostrada en el mapa.';
+        document.getElementById('btnGuardar').disabled = false;
+    } catch (e) {
+        console.error(e);
+        alert('No se pudo calcular la ruta');
+    }
+};
+
+document.getElementById('btnGuardar').onclick = async () => {
+    if (!token) { alert('Primero inicia sesión'); return; }
+    if (!origen || !destino || !rutaGeoJSON) { alert('Faltan datos (origen/destino/ruta)'); return; }
+
+    const nombreOrigen = document.getElementById('nombreOrigen').value.trim();
+    const nombreDestino = document.getElementById('nombreDestino').value.trim();
+
+    const payload = {
+        nombreOrigen,
+        origen_lng: origen[0],
+        origen_lat: origen[1],
+        nombreDestino,
+        destino_lng: destino[0],
+        destino_lat: destino[1],
+        rutaGeoJSON: rutaGeoJSON,
+        segmentos: []
+    };
+
+    const res = await fetch(`${apiBase}/ubicaciones`, {
+        method: 'POST',
+        headers: {
+            'Content-Type':'application/json',
+            'Accept':'application/json',
+            'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (res.ok) {
+        alert('Guardado OK. ID: ' + data.id);
+    } else {
+        alert('Error al guardar: ' + (data.error || data.message || '')); 
+    }
+};
+
+document.getElementById('btnListar').onclick = async () => {
+    if (!token) { alert('Primero inicia sesión'); return; }
+    const res = await fetch(`${apiBase}/ubicaciones`, {
+        headers: { 'Accept':'application/json', 'Authorization': `Bearer ${token}` }
+    });
+    const items = await res.json();
+    const cont = document.getElementById('lista');
+    cont.innerHTML = '';
+    if (!Array.isArray(items)) { cont.textContent = 'Sin datos'; return; }
+    items.forEach((it) => {
+        const div = document.createElement('div');
+        div.style.border = '1px solid #eee';
+        div.style.padding = '8px';
+        div.style.margin = '6px 0';
+        div.innerHTML = `<strong>ID ${it.id}</strong><br/>`+
+            `${it.nombreorigen || ''} → ${it.nombredestino || ''}<br/>`+
+            `<span class="muted">(${it.origen_lng}, ${it.origen_lat}) → (${it.destino_lng}, ${it.destino_lat})</span><br/>`+
+            `<button data-id="${it.id}">Ver en mapa</button>`;
+        div.querySelector('button').onclick = async (ev) => {
+            const id = ev.target.getAttribute('data-id');
+            const r = await fetch(`${apiBase}/ubicaciones/${id}`, { headers: { 'Accept':'application/json', 'Authorization': `Bearer ${token}` } });
+            const d = await r.json();
+            if (rutaLayer) { map.removeLayer(rutaLayer); rutaLayer = null; }
+            if (markers.origen) { map.removeLayer(markers.origen); markers.origen = null; }
+            if (markers.destino) { map.removeLayer(markers.destino); markers.destino = null; }
+            if (d.origen_lat && d.origen_lng) {
+                markers.origen = L.marker([d.origen_lat, d.origen_lng]).addTo(map).bindPopup('Origen').openPopup();
+            }
+            if (d.destino_lat && d.destino_lng) {
+                markers.destino = L.marker([d.destino_lat, d.destino_lng]).addTo(map).bindPopup('Destino');
+            }
+            if (d.rutageojson) {
+                try {
+                    const geom = JSON.parse(d.rutageojson);
+                    rutaLayer = L.geoJSON({ type:'Feature', geometry: geom, properties:{} }).addTo(map);
+                    map.fitBounds(rutaLayer.getBounds());
+                } catch (e) { console.warn('No se pudo parsear rutageojson'); }
+            }
+        };
+        cont.appendChild(div);
+    });
+};
+</script>
+</body>
+</html>
+
+
