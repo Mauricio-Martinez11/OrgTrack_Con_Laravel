@@ -67,6 +67,10 @@ Route::get('/direcciones/create', function () {
     return view('direcciones.create');
 })->name('direcciones.create');
 
+Route::get('/direcciones/{id}/edit', function ($id) {
+    return view('direcciones.create', ['editId' => $id]);
+})->name('direcciones.edit');
+
 // Rutas de documentos
 Route::get('/documentos', function () {
     return view('documentos.index');

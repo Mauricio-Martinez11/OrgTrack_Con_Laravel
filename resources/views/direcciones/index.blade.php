@@ -15,9 +15,9 @@
                 <h3 class="card-title">Lista de direcciones</h3>
                 <div class="card-tools">
                     <div class="input-group input-group-sm" style="width: 250px;">
-                        <input type="text" name="table_search" class="form-control float-right" placeholder="Buscar dirección...">
+                        <input type="text" id="searchInput" class="form-control float-right" placeholder="Buscar dirección...">
                         <div class="input-group-append">
-                            <button type="button" class="btn btn-default"><i class="fas fa-search"></i></button>
+                            <button type="button" class="btn btn-default" id="searchBtn"><i class="fas fa-search"></i></button>
                             <a href="{{ route('direcciones.create') }}" class="btn btn-primary">
                                 <i class="fas fa-plus"></i> Nueva dirección
                             </a>
@@ -28,72 +28,170 @@
             <!-- /.card-header -->
 
             <div class="card-body p-0">
-                <ul class="list-group list-group-flush">
-                    <li class="list-group-item d-flex align-items-center justify-content-between">
-                        <div class="mr-2">
-                            <div class="font-weight-bold">Calle Sapocó → Pasillo Montegrande</div>
-                            <small class="text-muted">Santa Cruz de la Sierra, Bolivia</small>
-                        </div>
-                        <div class="btn-group">
-                            <a href="#" class="btn btn-sm btn-outline-primary"><i class="fas fa-pen mr-1"></i>Editar</a>
-                            <a href="#" class="btn btn-sm btn-outline-danger"><i class="fas fa-trash mr-1"></i>Eliminar</a>
-                        </div>
-                    </li>
-                    <li class="list-group-item d-flex align-items-center justify-content-between">
-                        <div class="mr-2">
-                            <div class="font-weight-bold">Av. Grigotá → Calle Cordercuz</div>
-                            <small class="text-muted">Santa Cruz de la Sierra, Bolivia</small>
-                        </div>
-                        <div class="btn-group">
-                            <a href="#" class="btn btn-sm btn-outline-primary"><i class="fas fa-pen mr-1"></i>Editar</a>
-                            <a href="#" class="btn btn-sm btn-outline-danger"><i class="fas fa-trash mr-1"></i>Eliminar</a>
-                        </div>
-                    </li>
-                    <li class="list-group-item d-flex align-items-center justify-content-between">
-                        <div class="mr-2">
-                            <div class="font-weight-bold">Cochabamba, Centro → Calle Juan de Garay, Barrio Militar</div>
-                            <small class="text-muted">Santa Cruz de la Sierra, Bolivia</small>
-                        </div>
-                        <div class="btn-group">
-                            <a href="#" class="btn btn-sm btn-outline-primary"><i class="fas fa-pen mr-1"></i>Editar</a>
-                            <a href="#" class="btn btn-sm btn-outline-danger"><i class="fas fa-trash mr-1"></i>Eliminar</a>
-                        </div>
-                    </li>
-                    <li class="list-group-item d-flex align-items-center justify-content-between">
-                        <div class="mr-2">
-                            <div class="font-weight-bold">Avenida San Juan → Calle Buceta</div>
-                            <small class="text-muted">Santa Cruz de la Sierra, Bolivia</small>
-                        </div>
-                        <div class="btn-group">
-                            <a href="#" class="btn btn-sm btn-outline-primary"><i class="fas fa-pen mr-1"></i>Editar</a>
-                            <a href="#" class="btn btn-sm btn-outline-danger"><i class="fas fa-trash mr-1"></i>Eliminar</a>
-                        </div>
-                    </li>
-                    <li class="list-group-item d-flex align-items-center justify-content-between">
-                        <div class="mr-2">
-                            <div class="font-weight-bold">Ángel Chávez Ruiz → La Morita, El Pari</div>
-                            <small class="text-muted">Provincia Andrés Ibáñez, Santa Cruz</small>
-                        </div>
-                        <div class="btn-group">
-                            <a href="#" class="btn btn-sm btn-outline-primary"><i class="fas fa-pen mr-1"></i>Editar</a>
-                            <a href="#" class="btn btn-sm btn-outline-danger"><i class="fas fa-trash mr-1"></i>Eliminar</a>
-                        </div>
-                    </li>
+                <div id="loading" class="text-center p-4">
+                    <i class="fas fa-spinner fa-spin fa-2x"></i>
+                    <p class="mt-2">Cargando direcciones...</p>
+                </div>
+                <div id="error-message" class="alert alert-danger d-none m-3"></div>
+                <ul id="direcciones-list" class="list-group list-group-flush" style="display: none;">
+                    <!-- Las direcciones se cargarán aquí dinámicamente -->
                 </ul>
+                <div id="empty-message" class="text-center p-4" style="display: none;">
+                    <p class="text-muted">No hay direcciones guardadas. <a href="{{ route('direcciones.create') }}">Crear una nueva dirección</a></p>
+                </div>
             </div>
             <!-- /.card-body -->
-
-            <div class="card-footer clearfix">
-                <ul class="pagination pagination-sm m-0 float-right">
-                    <li class="page-item"><a class="page-link" href="#">«</a></li>
-                    <li class="page-item active"><a class="page-link" href="#">1</a></li>
-                    <li class="page-item"><a class="page-link" href="#">2</a></li>
-                    <li class="page-item"><a class="page-link" href="#">3</a></li>
-                    <li class="page-item"><a class="page-link" href="#">»</a></li>
-                </ul>
-            </div>
         </div>
         <!-- /.card -->
     </div>
 </div>
+
+@endsection
+
+@section('scripts')
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const token = localStorage.getItem('authToken');
+    if (!token) {
+        window.location.href = '/login';
+        return;
+    }
+
+    const direccionesList = document.getElementById('direcciones-list');
+    const loadingDiv = document.getElementById('loading');
+    const errorMessage = document.getElementById('error-message');
+    const emptyMessage = document.getElementById('empty-message');
+    const searchInput = document.getElementById('searchInput');
+    let allDirecciones = [];
+
+    // Cargar direcciones
+    async function loadDirecciones() {
+        loadingDiv.style.display = 'block';
+        direccionesList.style.display = 'none';
+        errorMessage.classList.add('d-none');
+        emptyMessage.style.display = 'none';
+
+        try {
+            const response = await fetch(`${window.location.origin}/api/ubicaciones`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (!response.ok) {
+                if (response.status === 401) {
+                    localStorage.removeItem('authToken');
+                    window.location.href = '/login';
+                    return;
+                }
+                throw new Error('Error al cargar direcciones');
+            }
+
+            allDirecciones = await response.json();
+            displayDirecciones(allDirecciones);
+        } catch (error) {
+            errorMessage.textContent = 'Error al cargar las direcciones: ' + error.message;
+            errorMessage.classList.remove('d-none');
+        } finally {
+            loadingDiv.style.display = 'none';
+        }
+    }
+
+    // Mostrar direcciones
+    function displayDirecciones(direcciones) {
+        direccionesList.innerHTML = '';
+
+        if (direcciones.length === 0) {
+            emptyMessage.style.display = 'block';
+            return;
+        }
+
+        direccionesList.style.display = 'block';
+        direcciones.forEach(dir => {
+            const origen = dir.nombreorigen || 'Sin nombre';
+            const destino = dir.nombredestino || 'Sin nombre';
+            const li = document.createElement('li');
+            li.className = 'list-group-item d-flex align-items-center justify-content-between';
+            li.innerHTML = `
+                <div class="mr-2 flex-grow-1">
+                    <div class="font-weight-bold">${origen} → ${destino}</div>
+                    <small class="text-muted">
+                        ${dir.origen_lat && dir.origen_lng ? `Origen: ${parseFloat(dir.origen_lat).toFixed(4)}, ${parseFloat(dir.origen_lng).toFixed(4)}` : 'Sin coordenadas'} | 
+                        ${dir.destino_lat && dir.destino_lng ? `Destino: ${parseFloat(dir.destino_lat).toFixed(4)}, ${parseFloat(dir.destino_lng).toFixed(4)}` : 'Sin coordenadas'}
+                    </small>
+                </div>
+                <div class="btn-group">
+                    <button class="btn btn-sm btn-outline-primary edit-btn" data-id="${dir.id}" data-origen="${origen}" data-destino="${destino}">
+                        <i class="fas fa-pen mr-1"></i>Editar
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger delete-btn" data-id="${dir.id}">
+                        <i class="fas fa-trash mr-1"></i>Eliminar
+                    </button>
+                </div>
+            `;
+            direccionesList.appendChild(li);
+        });
+
+        // Event listeners para botones
+        document.querySelectorAll('.edit-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const id = btn.dataset.id;
+                window.location.href = `/direcciones/${id}/edit`;
+            });
+        });
+
+        document.querySelectorAll('.delete-btn').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const id = btn.dataset.id;
+                if (confirm('¿Estás seguro de que deseas eliminar esta dirección?')) {
+                    await deleteDireccion(id);
+                }
+            });
+        });
+    }
+
+    // Eliminar dirección
+    async function deleteDireccion(id) {
+        try {
+            const response = await fetch(`${window.location.origin}/api/ubicaciones/${id}`, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (!response.ok) {
+                const data = await response.json().catch(() => ({}));
+                alert(data.error || 'Error al eliminar la dirección');
+                return;
+            }
+
+            await loadDirecciones();
+        } catch (error) {
+            alert('Error al eliminar la dirección: ' + error.message);
+        }
+    }
+
+
+    // Búsqueda
+    searchInput.addEventListener('input', (e) => {
+        const searchTerm = e.target.value.toLowerCase();
+        const filtered = allDirecciones.filter(dir => {
+            const origen = (dir.nombreorigen || '').toLowerCase();
+            const destino = (dir.nombredestino || '').toLowerCase();
+            return origen.includes(searchTerm) || destino.includes(searchTerm);
+        });
+        displayDirecciones(filtered);
+    });
+
+    document.getElementById('searchBtn').addEventListener('click', () => {
+        searchInput.dispatchEvent(new Event('input'));
+    });
+
+    // Cargar direcciones al iniciar
+    loadDirecciones();
+});
+</script>
 @endsection

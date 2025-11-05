@@ -92,12 +92,6 @@
 <!-- AdminLTE App -->
 <script src="https://cdn.jsdelivr.net/npm/admin-lte@3.2/dist/js/adminlte.min.js"></script>
 <script>
-// Si ya hay sesión, redirigir al dashboard
-(function(){
-    try { if (localStorage.getItem('authToken')) { window.location.replace('/dashboard'); } } catch {}
-})();
-</script>
-<script>
 document.addEventListener('DOMContentLoaded', function () {
     const form = document.getElementById('register-form');
     const errorBox = document.getElementById('register-error');

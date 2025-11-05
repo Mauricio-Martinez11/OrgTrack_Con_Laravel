@@ -49,7 +49,7 @@ Route::middleware([])->group(function () {
     Route::middleware('jwt')->get('/envios/{id_envio}/documento', [EnvioController::class, 'generarDocumentoEnvio']);
     Route::middleware('jwt')->put('/envios/{id_envio}/estado-global', [EnvioController::class, 'actualizarEstadoGlobalEnvio']);
 
-    Route::middleware('jwt')->prefix('ubicaciones')->group(function () {
+    Route::prefix('ubicaciones')->group(function () {
         Route::get('/', [UbicacionController::class, 'index']);
         Route::get('/{id}', [UbicacionController::class, 'show']);
         Route::post('/', [UbicacionController::class, 'store']);
